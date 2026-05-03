@@ -1,72 +1,84 @@
-# Lesson 1 — `CLAUDE.md` (project memory)
+# Lesson 2 — Skills (reusable workflows)
 
 ## What you'll learn
 
-- Why every Claude Code project should start with a `CLAUDE.md`
-- What belongs in it (and what doesn't)
-- How to verify Claude is actually reading it
+- What a Claude Code skill is and when to write one
+- How to package a multi-step recipe so you can invoke it as `/skill-name`
+- How to make skills auto-trigger from natural-language prompts (no slash needed)
 
 ## Java analogy
 
-Think of `CLAUDE.md` as the file you'd hand a new senior engineer joining the team on day one — a one-pager that fuses `README.md`, `CONTRIBUTING.md`, and your team's style guide. The difference: **Claude reads it on every prompt**, so the cost of writing it down once is repaid forever.
+A skill is like a `@Service` bean — write it once, inject it (invoke it) wherever you need it. Without skills, you re-explain the same recipe to Claude every time ("scaffold a controller, then a service, then a JPA repo, then a test"). With a skill, you say `/new-rest-endpoint Author` and the recipe runs.
 
-If you've ever onboarded someone and watched them write a method that violated three of your team's unwritten rules, you already understand the value of `CLAUDE.md`.
+If you've ever written a shell script to wrap a 5-step copy-paste workflow, you understand the value: the work is one-shot, but you do it twice a week.
 
 ## The concept
 
-`CLAUDE.md` lives at the repo root. Claude Code automatically loads it into context for every conversation in this directory. It is **not** for documenting *what* the code does (that's javadoc / `README.md`); it is for documenting **how to work in this codebase** in a way that's useful to an LLM teammate:
-
-- The exact commands to build, test, and run
-- Layout conventions (package structure, naming)
-- Strong rules ("we use Java records for DTOs, never Lombok `@Data`")
-- Things that aren't obvious from the code alone (a sharp edge, a workaround, a deprecated path)
-
-Keep it tight. A 2,000-line `CLAUDE.md` is read every turn — bloat costs you tokens, and important rules get lost in the noise.
-
-### Tiny example
+A skill is just a folder under `.claude/skills/<name>/` containing a `SKILL.md`. The frontmatter looks like:
 
 ```markdown
-## Build & test
-- `mvn -q test` — run unit tests
-- `mvn spring-boot:run` — start the app on :8080
+---
+name: new-rest-endpoint
+description: Scaffold a new REST endpoint (controller + service + repository + test) following the project's by-feature package layout.
+---
 
-## Conventions
-- Use Java records for request/response DTOs.
-- Controllers go under `com.learnclaude.library.<feature>`, paired with a `*Service` and `*Repository`.
+# new-rest-endpoint
+
+Given a feature name like `Author`:
+
+1. Create `com.learnclaude.library.author/Author.java` (JPA entity, copy the shape of `Book.java`).
+2. Create `AuthorRepository extends JpaRepository<Author, Long>`.
+3. Create `AuthorService` with `findAll()` and `create(...)`.
+4. Create `AuthorController` with `GET /authors` and `POST /authors`.
+5. Create `AuthorControllerTest` mirroring `BookControllerTest`.
+6. Run `mvn -q test` to confirm.
 ```
+
+**Two ways to invoke:**
+
+1. **Explicit slash**: type `/new-rest-endpoint Author` — Claude runs the recipe.
+2. **Auto-trigger**: type "add a new author endpoint" — Claude reads the skill's `description` field and decides to use it. The `description` is the most important line in the file: it's what Claude pattern-matches against your natural-language request.
+
+Skills can scope to a project (`.claude/skills/`) or a user (`~/.claude/skills/`). Project-scoped skills travel with the repo — the whole team gets them.
+
+### Why not just put this in `CLAUDE.md`?
+
+Because `CLAUDE.md` is loaded **every** turn (token cost). A skill is loaded **only when invoked**. Use `CLAUDE.md` for always-on conventions; use skills for occasional multi-step recipes.
 
 ## Your turn (TODO)
 
-Create a `CLAUDE.md` at the repo root that gives Claude enough context to work productively on this codebase. At minimum, include:
+Author the `new-rest-endpoint` skill so you can scaffold a feature in one command.
 
-- [ ] **Build & test commands** — `mvn` invocations a developer (or Claude) would actually run
-- [ ] **Package layout** — describe the `com.learnclaude.library.<feature>` convention
-- [ ] **DTO rule** — write a rule that DTOs must be Java records (not classes, not Lombok)
-- [ ] **Test conventions** — JUnit 5, Spring Boot test slice, where tests live
-- [ ] **One sharp edge** — note that `application.yml` enables H2 console at `/h2-console` for local debugging
-
-Bonus:
-- [ ] Mention that Claude should run `mvn -q test` before reporting work as done.
-- [ ] Note the Java version (21) so Claude doesn't suggest Java 8 patterns.
+- [ ] Create `.claude/skills/new-rest-endpoint/SKILL.md` with frontmatter (`name`, `description`).
+- [ ] Write a `description` that makes Claude auto-trigger the skill when the user says things like "add a new endpoint for X" or "scaffold a foo controller". One sentence. Be specific about what the skill does.
+- [ ] In the body, list the exact files to create — referencing the `book` package as the template to copy. Include filenames, package declarations, and a note to mirror `BookControllerTest` for the test file.
+- [ ] Add a final step: run `mvn -q test` and report failures.
+- [ ] (Optional) Add a `/list-rest-endpoints` skill that greps for `@RestController` and lists all REST surface in the project.
 
 ## How to verify
 
-After writing `CLAUDE.md`, start a fresh `claude` session in this directory and ask:
+Two checks:
 
-> How do I run the tests in this project?
+**Explicit invocation.** In a fresh `claude` session in this directory:
 
-Claude should answer using the exact command from your `CLAUDE.md` — not by grepping `pom.xml` from scratch. If it says "let me check…" and starts running `Read`/`Grep` tools, your `CLAUDE.md` isn't being picked up (check the file is at the repo root, not in a subdirectory).
+```
+/new-rest-endpoint Author
+```
 
-Then ask:
+Claude should create all 5 files in the right packages, with code that compiles. Run `mvn -q test` and confirm the new `AuthorControllerTest` passes.
 
-> Add a DTO for creating a new book.
+**Auto-trigger.** Discard the changes (`git checkout .`) and try natural language:
 
-Claude should produce a Java `record`, not a class with getters/setters. If it produces a class, your DTO rule isn't strong enough — make the wording in `CLAUDE.md` more imperative (`MUST use records`, not `prefer records`).
+```
+Add a Publisher REST endpoint following the same pattern as Book.
+```
+
+Claude should choose to invoke `/new-rest-endpoint` on its own. If it doesn't — if it instead writes the files manually from scratch — your `description` isn't doing its job. Make the description more precise about what triggers it.
 
 ## Reference
 
-- [Memory & CLAUDE.md](https://docs.claude.com/claude-code/memory) — official docs
-- Compare your `CLAUDE.md` to the one on `lesson-01-claude-md-solution`:
+- [Skills documentation](https://docs.claude.com/claude-code/skills)
+- Compare your skill to the solution branch:
   ```bash
-  git diff lesson-01-claude-md..lesson-01-claude-md-solution -- CLAUDE.md
+  git diff lesson-02-skills..lesson-02-skills-solution -- .claude/
   ```
