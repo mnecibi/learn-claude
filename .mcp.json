@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "./src"
+      ]
+    },
+    "actuator": {
+      "type": "http",
+      "url": "http://localhost:8080/actuator-mcp",
+      "_comment": "Stub. In production, run an MCP HTTP server in front of Spring Boot Actuator so Claude can call /actuator/health, /actuator/metrics, /actuator/loggers as tools. See https://github.com/modelcontextprotocol/servers for HTTP-server examples."
+    }
+  }
+}
