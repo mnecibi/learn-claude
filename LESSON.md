@@ -1,86 +1,76 @@
-# Lesson 3 — Hooks (automate around tool calls)
+# Lesson 4 — Tools / MCP (extend Claude with external services)
 
 ## What you'll learn
 
-- What Claude Code hooks are and which events they fire on
-- How to use hooks to enforce policies and automate verification
-- The difference between blocking and non-blocking hooks
+- What MCP (Model Context Protocol) is and why you should care
+- The difference between built-in tools, hooks, and MCP servers
+- How to wire an MCP server into a Claude Code project
 
 ## Java analogy
 
-Hooks are **AOP for your AI assistant**. Think Spring `@Around` advice or a servlet `Filter`: a piece of code that fires *around* an event you don't own — in this case, Claude's tool calls — letting you observe, modify, or veto.
+MCP is **SPI for AI assistants**. In Java, `ServiceLoader` lets you plug new implementations into a running app via a manifest (`META-INF/services/...`); you don't recompile, you just drop a jar on the classpath.
 
-You wouldn't dream of running a Spring app without filters for auth/logging/metrics. Once you've added hooks to a Claude Code project, you'll feel the same way: "how did I work without auto-test-on-stop?"
+MCP is the same idea: a Claude Code session discovers MCP servers via a manifest (`.mcp.json`), starts them, and exposes their tools to the model. Want Claude to query Postgres? Add a Postgres MCP server. Want it to file Jira tickets? Add the Atlassian MCP server. The model code doesn't change — the *tool surface* expands.
 
 ## The concept
 
-Hooks are configured in `.claude/settings.json`. The interesting events:
+A **tool** is anything Claude can invoke that returns a result. Three sources:
 
-| Event | Fires when | Typical use |
-|---|---|---|
-| `PreToolUse` | Before a tool runs | Block/confirm risky operations |
-| `PostToolUse` | After a tool succeeds | Auto-format, recompile, log |
-| `Stop` | When Claude finishes its turn | Run tests, update CI status |
-| `UserPromptSubmit` | When you submit a prompt | Inject context, gate sensitive prompts |
+1. **Built-in tools** (`Read`, `Write`, `Bash`, `Grep`...) — ship with Claude Code.
+2. **Hooks** (lesson 3) — fire as side effects of tool calls; not invoked by the model directly.
+3. **MCP servers** — external processes that expose tools (and resources, prompts) over the MCP protocol. Configured per-project in `.mcp.json`.
 
-A hook is just a shell command. Its **exit code matters**:
+An MCP server can be a binary, a Python script, an `npx` invocation, or a remote HTTP endpoint. The protocol is transport-agnostic.
 
-- `0` → silent success
-- `2` → blocking error; the message on stderr is shown to Claude (PreToolUse) or to the user (PostToolUse)
-- other → non-blocking warning, message on stderr is shown to the user
-
-So a `PreToolUse` hook that exits 2 prevents the tool call from running. A `PostToolUse` hook that exits 2 doesn't undo the tool call (impossible) but flags the issue to Claude so it can react.
-
-### Tiny example
+### Tiny example — `.mcp.json`
 
 ```json
 {
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Edit|Write",
-        "hooks": [
-          { "type": "command", "command": "mvn -q compile" }
-        ]
-      }
-    ]
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./src"]
+    }
   }
 }
 ```
 
-After every `Edit` or `Write`, Maven recompiles. If compile fails, exit code is non-zero and Claude sees the error — it'll usually fix it on its own without you saying a word.
+After committing this, anyone running `claude` in the repo gets a `filesystem` MCP server scoped to `./src`. Claude can now call `mcp__filesystem__list_directory`, `mcp__filesystem__read_file`, etc.
+
+### Why use an MCP server when Claude already has `Read` and `Grep`?
+
+- **Scoping** — the filesystem server above is constrained to `./src`; Claude can't accidentally read your home dir.
+- **Capability** — many MCP servers expose things Claude doesn't have natively (database queries, Jira, Linear, your internal API).
+- **Auditing** — MCP calls are first-class in transcripts; easier to review what an external integration touched.
 
 ## Your turn (TODO)
 
-Add a `.claude/settings.json` with three hooks. Each hook teaches a different pattern.
+Add an `.mcp.json` at the repo root with two server entries.
 
-- [ ] **PostToolUse — auto-compile.** Match `Edit|Write|MultiEdit`. Run `mvn -q compile -pl . --quiet` (or just `mvn -q compile`). The point: catch breakage immediately, before Claude moves on.
+- [ ] **`filesystem` server scoped to `src/`** using `@modelcontextprotocol/server-filesystem` (no install — `npx -y` runs it). The point: see how scoping replaces wide-open `Read`/`Write` for safer collaboration.
 
-- [ ] **Stop — auto-test.** Match the `Stop` event. Run `mvn -q test`. The point: every turn ends with a green test suite or a clear failure.
+- [ ] **A stub for an HTTP MCP server** pointed at `http://localhost:8080/actuator` (Spring Boot's actuator endpoints). Use a placeholder — you don't need to actually run the actuator MCP server in this lesson; the goal is to see the shape of an HTTP-based config and learn how Claude would call into a running Java service. Add a `// note:` in the LESSON about how a real production wire-up would expose `/actuator/metrics`, `/actuator/health` to Claude as tools.
 
-- [ ] **PreToolUse — pom.xml guard.** Match `Edit|Write` *and* match the file path `pom.xml`. Echo a warning to stderr and exit `2` to block the edit. The point: enforce that pom changes get human review (you don't want Claude bumping Spring Boot 3.3 → 4.0 without you noticing).
+- [ ] **Add `management.endpoints.web.exposure.include: "*"`** to `src/main/resources/application.yml` so the actuator endpoints are reachable when the app runs. (You'll also need the `spring-boot-starter-actuator` dependency in `pom.xml` — but remember, the hook from lesson 3 will block the pom edit. Confirm with the user before doing it, then approve.)
 
 Hints:
-- The `matcher` field is a regex over tool names. To match a path, your hook command itself reads the input from stdin (JSON containing the tool's args) — for the pom guard, write a small inline script: read stdin, check if `file_path` ends in `pom.xml`, exit accordingly.
-- Keep hooks **fast**. A 30-second hook makes Claude feel sluggish. `mvn -q test` is borderline; if your suite grows, scope tests to the changed module.
-- Use `.claude/settings.local.json` (gitignored) for personal-only hooks. Use `.claude/settings.json` (committed) for team-wide policy.
+- `.mcp.json` is committed (team-wide). Per-user secrets (API tokens for hosted MCP servers) belong in environment variables referenced from the JSON via `${ENV_VAR}`.
+- Check what's available: `claude mcp list` shows configured servers; `claude mcp tools <server>` lists the tools each one exposes.
 
 ## How to verify
 
-In a fresh `claude` session:
+1. Start a fresh `claude` session and run `claude mcp list`. You should see `filesystem` (and your stub HTTP server, even if it's not actually reachable).
 
-1. Ask Claude to add a trivial method to `BookService`. After it edits, you should see `mvn -q compile` run automatically in the hook output.
+2. Ask Claude: "list every `@RestController` in the project". Watch the tool calls — you want to see `mcp__filesystem__*` calls, not `Grep`/`Read` against the whole repo. The MCP server is now its preferred way of touching `src/`.
 
-2. End the conversation (or wait for Claude to wrap up). The `Stop` hook should fire and run the full test suite.
-
-3. Ask Claude to "bump Spring Boot to 3.4 in pom.xml". The `PreToolUse` hook should block the edit with your warning message; Claude should report back that it can't modify `pom.xml` without your approval.
-
-If a hook misbehaves, run `claude --debug` to see the exact event payload and exit codes — invaluable for hook debugging.
+3. (Optional, if you wired the actuator MCP server for real) Run `mvn spring-boot:run` in another terminal and ask Claude: "what's the JVM uptime?" — it should call the actuator MCP tool.
 
 ## Reference
 
-- [Hooks documentation](https://docs.claude.com/claude-code/hooks)
-- Compare your `settings.json` to the solution:
+- [MCP overview](https://modelcontextprotocol.io)
+- [Configuring MCP in Claude Code](https://docs.claude.com/claude-code/mcp)
+- [MCP server registry](https://github.com/modelcontextprotocol/servers) — official servers including filesystem, postgres, github, slack, brave-search
+- Compare your `.mcp.json` to the solution:
   ```bash
-  git diff lesson-03-hooks..lesson-03-hooks-solution -- .claude/
+  git diff lesson-04-mcp..lesson-04-mcp-solution
   ```
