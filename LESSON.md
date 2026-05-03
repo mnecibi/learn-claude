@@ -1,84 +1,86 @@
-# Lesson 2 — Skills (reusable workflows)
+# Lesson 3 — Hooks (automate around tool calls)
 
 ## What you'll learn
 
-- What a Claude Code skill is and when to write one
-- How to package a multi-step recipe so you can invoke it as `/skill-name`
-- How to make skills auto-trigger from natural-language prompts (no slash needed)
+- What Claude Code hooks are and which events they fire on
+- How to use hooks to enforce policies and automate verification
+- The difference between blocking and non-blocking hooks
 
 ## Java analogy
 
-A skill is like a `@Service` bean — write it once, inject it (invoke it) wherever you need it. Without skills, you re-explain the same recipe to Claude every time ("scaffold a controller, then a service, then a JPA repo, then a test"). With a skill, you say `/new-rest-endpoint Author` and the recipe runs.
+Hooks are **AOP for your AI assistant**. Think Spring `@Around` advice or a servlet `Filter`: a piece of code that fires *around* an event you don't own — in this case, Claude's tool calls — letting you observe, modify, or veto.
 
-If you've ever written a shell script to wrap a 5-step copy-paste workflow, you understand the value: the work is one-shot, but you do it twice a week.
+You wouldn't dream of running a Spring app without filters for auth/logging/metrics. Once you've added hooks to a Claude Code project, you'll feel the same way: "how did I work without auto-test-on-stop?"
 
 ## The concept
 
-A skill is just a folder under `.claude/skills/<name>/` containing a `SKILL.md`. The frontmatter looks like:
+Hooks are configured in `.claude/settings.json`. The interesting events:
 
-```markdown
----
-name: new-rest-endpoint
-description: Scaffold a new REST endpoint (controller + service + repository + test) following the project's by-feature package layout.
----
+| Event | Fires when | Typical use |
+|---|---|---|
+| `PreToolUse` | Before a tool runs | Block/confirm risky operations |
+| `PostToolUse` | After a tool succeeds | Auto-format, recompile, log |
+| `Stop` | When Claude finishes its turn | Run tests, update CI status |
+| `UserPromptSubmit` | When you submit a prompt | Inject context, gate sensitive prompts |
 
-# new-rest-endpoint
+A hook is just a shell command. Its **exit code matters**:
 
-Given a feature name like `Author`:
+- `0` → silent success
+- `2` → blocking error; the message on stderr is shown to Claude (PreToolUse) or to the user (PostToolUse)
+- other → non-blocking warning, message on stderr is shown to the user
 
-1. Create `com.learnclaude.library.author/Author.java` (JPA entity, copy the shape of `Book.java`).
-2. Create `AuthorRepository extends JpaRepository<Author, Long>`.
-3. Create `AuthorService` with `findAll()` and `create(...)`.
-4. Create `AuthorController` with `GET /authors` and `POST /authors`.
-5. Create `AuthorControllerTest` mirroring `BookControllerTest`.
-6. Run `mvn -q test` to confirm.
+So a `PreToolUse` hook that exits 2 prevents the tool call from running. A `PostToolUse` hook that exits 2 doesn't undo the tool call (impossible) but flags the issue to Claude so it can react.
+
+### Tiny example
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "mvn -q compile" }
+        ]
+      }
+    ]
+  }
+}
 ```
 
-**Two ways to invoke:**
-
-1. **Explicit slash**: type `/new-rest-endpoint Author` — Claude runs the recipe.
-2. **Auto-trigger**: type "add a new author endpoint" — Claude reads the skill's `description` field and decides to use it. The `description` is the most important line in the file: it's what Claude pattern-matches against your natural-language request.
-
-Skills can scope to a project (`.claude/skills/`) or a user (`~/.claude/skills/`). Project-scoped skills travel with the repo — the whole team gets them.
-
-### Why not just put this in `CLAUDE.md`?
-
-Because `CLAUDE.md` is loaded **every** turn (token cost). A skill is loaded **only when invoked**. Use `CLAUDE.md` for always-on conventions; use skills for occasional multi-step recipes.
+After every `Edit` or `Write`, Maven recompiles. If compile fails, exit code is non-zero and Claude sees the error — it'll usually fix it on its own without you saying a word.
 
 ## Your turn (TODO)
 
-Author the `new-rest-endpoint` skill so you can scaffold a feature in one command.
+Add a `.claude/settings.json` with three hooks. Each hook teaches a different pattern.
 
-- [ ] Create `.claude/skills/new-rest-endpoint/SKILL.md` with frontmatter (`name`, `description`).
-- [ ] Write a `description` that makes Claude auto-trigger the skill when the user says things like "add a new endpoint for X" or "scaffold a foo controller". One sentence. Be specific about what the skill does.
-- [ ] In the body, list the exact files to create — referencing the `book` package as the template to copy. Include filenames, package declarations, and a note to mirror `BookControllerTest` for the test file.
-- [ ] Add a final step: run `mvn -q test` and report failures.
-- [ ] (Optional) Add a `/list-rest-endpoints` skill that greps for `@RestController` and lists all REST surface in the project.
+- [ ] **PostToolUse — auto-compile.** Match `Edit|Write|MultiEdit`. Run `mvn -q compile -pl . --quiet` (or just `mvn -q compile`). The point: catch breakage immediately, before Claude moves on.
+
+- [ ] **Stop — auto-test.** Match the `Stop` event. Run `mvn -q test`. The point: every turn ends with a green test suite or a clear failure.
+
+- [ ] **PreToolUse — pom.xml guard.** Match `Edit|Write` *and* match the file path `pom.xml`. Echo a warning to stderr and exit `2` to block the edit. The point: enforce that pom changes get human review (you don't want Claude bumping Spring Boot 3.3 → 4.0 without you noticing).
+
+Hints:
+- The `matcher` field is a regex over tool names. To match a path, your hook command itself reads the input from stdin (JSON containing the tool's args) — for the pom guard, write a small inline script: read stdin, check if `file_path` ends in `pom.xml`, exit accordingly.
+- Keep hooks **fast**. A 30-second hook makes Claude feel sluggish. `mvn -q test` is borderline; if your suite grows, scope tests to the changed module.
+- Use `.claude/settings.local.json` (gitignored) for personal-only hooks. Use `.claude/settings.json` (committed) for team-wide policy.
 
 ## How to verify
 
-Two checks:
+In a fresh `claude` session:
 
-**Explicit invocation.** In a fresh `claude` session in this directory:
+1. Ask Claude to add a trivial method to `BookService`. After it edits, you should see `mvn -q compile` run automatically in the hook output.
 
-```
-/new-rest-endpoint Author
-```
+2. End the conversation (or wait for Claude to wrap up). The `Stop` hook should fire and run the full test suite.
 
-Claude should create all 5 files in the right packages, with code that compiles. Run `mvn -q test` and confirm the new `AuthorControllerTest` passes.
+3. Ask Claude to "bump Spring Boot to 3.4 in pom.xml". The `PreToolUse` hook should block the edit with your warning message; Claude should report back that it can't modify `pom.xml` without your approval.
 
-**Auto-trigger.** Discard the changes (`git checkout .`) and try natural language:
-
-```
-Add a Publisher REST endpoint following the same pattern as Book.
-```
-
-Claude should choose to invoke `/new-rest-endpoint` on its own. If it doesn't — if it instead writes the files manually from scratch — your `description` isn't doing its job. Make the description more precise about what triggers it.
+If a hook misbehaves, run `claude --debug` to see the exact event payload and exit codes — invaluable for hook debugging.
 
 ## Reference
 
-- [Skills documentation](https://docs.claude.com/claude-code/skills)
-- Compare your skill to the solution branch:
+- [Hooks documentation](https://docs.claude.com/claude-code/hooks)
+- Compare your `settings.json` to the solution:
   ```bash
-  git diff lesson-02-skills..lesson-02-skills-solution -- .claude/
+  git diff lesson-03-hooks..lesson-03-hooks-solution -- .claude/
   ```
