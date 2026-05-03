@@ -1,76 +1,85 @@
-# Lesson 4 — Tools / MCP (extend Claude with external services)
+# Lesson 5 — Subagents (focused workers with their own context)
 
 ## What you'll learn
 
-- What MCP (Model Context Protocol) is and why you should care
-- The difference between built-in tools, hooks, and MCP servers
-- How to wire an MCP server into a Claude Code project
+- What a subagent is and how it differs from the main Claude session
+- When to delegate to a subagent vs do it yourself
+- How to define a project-scoped subagent in `.claude/agents/`
 
 ## Java analogy
 
-MCP is **SPI for AI assistants**. In Java, `ServiceLoader` lets you plug new implementations into a running app via a manifest (`META-INF/services/...`); you don't recompile, you just drop a jar on the classpath.
+A subagent is **a worker dispatched to a thread pool**. Same JVM, isolated stack, focused job. The main agent (your conversation) is the dispatcher; subagents are `Callable<String>` tasks: you hand them a brief, they go away and come back with a result.
 
-MCP is the same idea: a Claude Code session discovers MCP servers via a manifest (`.mcp.json`), starts them, and exposes their tools to the model. Want Claude to query Postgres? Add a Postgres MCP server. Want it to file Jira tickets? Add the Atlassian MCP server. The model code doesn't change — the *tool surface* expands.
+Two reasons you'd dispatch instead of doing it yourself:
+
+1. **Context isolation** — the main agent's context fills up with code, tool results, and conversation history. A subagent starts fresh: 8k tokens of brief, no prior conversation. Useful for long, isolated jobs.
+2. **Specialization** — you can give the subagent a system prompt that turns it into a focused expert (security reviewer, test writer, code archaeologist). The main agent stays general-purpose.
+
+If you've used Java's `ForkJoinPool` to fan out independent work, you already understand the model.
 
 ## The concept
 
-A **tool** is anything Claude can invoke that returns a result. Three sources:
+A subagent is defined as a markdown file under `.claude/agents/<name>.md`:
 
-1. **Built-in tools** (`Read`, `Write`, `Bash`, `Grep`...) — ship with Claude Code.
-2. **Hooks** (lesson 3) — fire as side effects of tool calls; not invoked by the model directly.
-3. **MCP servers** — external processes that expose tools (and resources, prompts) over the MCP protocol. Configured per-project in `.mcp.json`.
+```markdown
+---
+name: spring-security-reviewer
+description: Reviews Spring REST controllers for missing authentication, authorization, and input-validation concerns. Use proactively after any controller changes.
+tools: Read, Grep, Glob
+---
 
-An MCP server can be a binary, a Python script, an `npx` invocation, or a remote HTTP endpoint. The protocol is transport-agnostic.
-
-### Tiny example — `.mcp.json`
-
-```json
-{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-filesystem", "./src"]
-    }
-  }
-}
+You are a Spring Security expert reviewing controllers for security gaps.
+For each `@RestController` you find:
+1. Check every endpoint for `@PreAuthorize` or method-level security.
+2. Check `@RequestBody` parameters for `@Valid`.
+3. Check `@PathVariable`/`@RequestParam` for input sanitization.
+4. Report findings as: file:line — severity — issue — suggested fix.
+Be terse. Concrete file:line refs only. No general advice.
 ```
 
-After committing this, anyone running `claude` in the repo gets a `filesystem` MCP server scoped to `./src`. Claude can now call `mcp__filesystem__list_directory`, `mcp__filesystem__read_file`, etc.
+The `tools` line restricts what the subagent can do — security reviewers don't need `Edit` or `Bash`.
 
-### Why use an MCP server when Claude already has `Read` and `Grep`?
+The main agent invokes a subagent via the `Task` tool. You can call it explicitly ("review BookController with the spring-security-reviewer subagent") or trust the main agent to choose based on the `description` field.
 
-- **Scoping** — the filesystem server above is constrained to `./src`; Claude can't accidentally read your home dir.
-- **Capability** — many MCP servers expose things Claude doesn't have natively (database queries, Jira, Linear, your internal API).
-- **Auditing** — MCP calls are first-class in transcripts; easier to review what an external integration touched.
+### When NOT to use a subagent
+
+- For a 30-second task. Spinning up a subagent costs latency and tokens.
+- When you need a back-and-forth conversation. Subagents return one message; they're fire-and-forget.
+- When the task needs full project context. Subagents start fresh — they don't see your conversation history.
 
 ## Your turn (TODO)
 
-Add an `.mcp.json` at the repo root with two server entries.
+Define two subagents.
 
-- [ ] **`filesystem` server scoped to `src/`** using `@modelcontextprotocol/server-filesystem` (no install — `npx -y` runs it). The point: see how scoping replaces wide-open `Read`/`Write` for safer collaboration.
+- [ ] **`.claude/agents/spring-security-reviewer.md`** — reviews controllers for missing `@PreAuthorize` / `@Valid` / input validation. Tools: `Read, Grep, Glob` (read-only). Description should make the main agent auto-invoke it after controller edits ("Use proactively after changes to any `@RestController`").
 
-- [ ] **A stub for an HTTP MCP server** pointed at `http://localhost:8080/actuator` (Spring Boot's actuator endpoints). Use a placeholder — you don't need to actually run the actuator MCP server in this lesson; the goal is to see the shape of an HTTP-based config and learn how Claude would call into a running Java service. Add a `// note:` in the LESSON about how a real production wire-up would expose `/actuator/metrics`, `/actuator/health` to Claude as tools.
+- [ ] **`.claude/agents/test-writer.md`** — writes JUnit 5 + MockMvc tests for a given controller, mirroring the style of `BookControllerTest`. Tools: `Read, Glob, Write` (needs `Write` because it's producing test files). Description should trigger when the user asks for tests on a class/feature.
 
-- [ ] **Add `management.endpoints.web.exposure.include: "*"`** to `src/main/resources/application.yml` so the actuator endpoints are reachable when the app runs. (You'll also need the `spring-boot-starter-actuator` dependency in `pom.xml` — but remember, the hook from lesson 3 will block the pom edit. Confirm with the user before doing it, then approve.)
-
-Hints:
-- `.mcp.json` is committed (team-wide). Per-user secrets (API tokens for hosted MCP servers) belong in environment variables referenced from the JSON via `${ENV_VAR}`.
-- Check what's available: `claude mcp list` shows configured servers; `claude mcp tools <server>` lists the tools each one exposes.
+Tips:
+- Keep the system prompt **focused**. A subagent that does five things does none of them well. If you're tempted to add a fifth bullet, split it into a second subagent.
+- Spell out the *output format* in the prompt. "Report as: file:line — severity — issue" beats "report findings clearly".
+- For the security reviewer, explicitly omit `Edit`/`Write` from `tools` — reviewers shouldn't ship fixes. That's a separate workflow.
 
 ## How to verify
 
-1. Start a fresh `claude` session and run `claude mcp list`. You should see `filesystem` (and your stub HTTP server, even if it's not actually reachable).
+1. **Security reviewer.** In a fresh `claude` session, run:
+   ```
+   Use the spring-security-reviewer subagent to audit BookController.
+   ```
+   It should flag: no `@PreAuthorize` anywhere, but `@Valid @RequestBody` is correctly applied. Output should be terse and file:line-anchored.
 
-2. Ask Claude: "list every `@RestController` in the project". Watch the tool calls — you want to see `mcp__filesystem__*` calls, not `Grep`/`Read` against the whole repo. The MCP server is now its preferred way of touching `src/`.
+2. **Auto-invocation.** Ask Claude to add a new endpoint to `BookController` (e.g. `DELETE /books/{id}`). After the edit, the security reviewer should auto-trigger because of the "use proactively" cue in its description. If it doesn't, your description isn't strong enough — make the trigger more specific.
 
-3. (Optional, if you wired the actuator MCP server for real) Run `mvn spring-boot:run` in another terminal and ask Claude: "what's the JVM uptime?" — it should call the actuator MCP tool.
+3. **Test writer.** Ask:
+   ```
+   Write tests for AuthorController using the test-writer subagent.
+   ```
+   (You'll need to scaffold `AuthorController` first using the lesson-2 skill.) The subagent should produce a test file structurally identical to `BookControllerTest`.
 
 ## Reference
 
-- [MCP overview](https://modelcontextprotocol.io)
-- [Configuring MCP in Claude Code](https://docs.claude.com/claude-code/mcp)
-- [MCP server registry](https://github.com/modelcontextprotocol/servers) — official servers including filesystem, postgres, github, slack, brave-search
-- Compare your `.mcp.json` to the solution:
+- [Subagents documentation](https://docs.claude.com/claude-code/sub-agents)
+- Compare your subagents to the solution:
   ```bash
-  git diff lesson-04-mcp..lesson-04-mcp-solution
+  git diff lesson-05-subagents..lesson-05-subagents-solution -- .claude/agents/
   ```
