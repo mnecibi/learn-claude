@@ -19,6 +19,21 @@ Sanity check:
 mvn -v && claude --version && git --version
 ```
 
+## Local development
+
+### Start the project
+```bash
+mvn spring-boot:run
+```
+
+you can now visit http://localhost:8080/books
+
+### Add a book
+
+```bash
+curl -s -X POST http://localhost:8080/books -H "Content-Type: application/json" -d '{"title":"Effective Java","author":"Joshua Bloch"}'
+```
+
 ## How the repo is organized
 
 `main` is the **baseline**: a tiny Spring Boot library service (one `Book` entity, one `BookController`, one test). It has no Claude Code customization — that's what you'll add, lesson by lesson.
