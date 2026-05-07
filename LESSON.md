@@ -63,6 +63,15 @@ Then ask:
 
 Claude should produce a Java `record`, not a class with getters/setters. If it produces a class, your DTO rule isn't strong enough — make the wording in `CLAUDE.md` more imperative (`MUST use records`, not `prefer records`).
 
+## Related commands
+
+| Command | What it does |
+|---|---|
+| `/init` | Initialize a project with a `CLAUDE.md` guide. The bootstrap for the file you're hand-writing in this lesson. |
+| `/memory` | Edit `CLAUDE.md` memory files, toggle auto-memory, view auto-memory entries. |
+
+See [the full command reference](https://code.claude.com/docs/en/commands) for everything else.
+
 ## Reference
 
 - [Memory & CLAUDE.md](https://docs.claude.com/claude-code/memory) — official docs
