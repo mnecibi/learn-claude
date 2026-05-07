@@ -2,7 +2,7 @@
 
 ## What you'll learn
 
-- Why every Claude Code project should start with a `CLAUDE.md`
+- Why every project should start with a `CLAUDE.md`
 - What belongs in it (and what doesn't)
 - How to verify Claude is actually reading it
 
