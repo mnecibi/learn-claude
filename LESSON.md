@@ -42,6 +42,18 @@ If your session looks like that, you've internalized lessons 1–5.
 - [ ] `git diff main..HEAD` shows the new `author/` package and its test.
 - [ ] You did not author any of the `Author` source files by hand.
 
+## Related commands
+
+| Command | What it does |
+|---|---|
+| `/skills` | List available skills (introduced in lesson 2). The capstone exercises your `new-rest-endpoint` skill. |
+| `/hooks` | View hook configurations (introduced in lesson 3). The capstone relies on the compile-on-edit, test-on-stop, and pom guard hooks. |
+| `/mcp` | Manage MCP server connections (introduced in lesson 4). The capstone uses the filesystem MCP server. |
+| `/agents` | Manage agent configurations (introduced in lesson 5). The capstone calls the `spring-security-reviewer` and `test-writer` subagents. |
+| `/review` | Review a pull request locally. Natural next step after the `spring-security-reviewer` subagent flags issues. |
+
+See [the full command reference](https://code.claude.com/docs/en/commands) for everything else.
+
 ## Reference
 
 The solution branch shows what the resulting tree looks like:
