@@ -65,6 +65,15 @@ Hints:
 
 3. (Optional, if you wired the actuator MCP server for real) Run `mvn spring-boot:run` in another terminal and ask Claude: "what's the JVM uptime?" — it should call the actuator MCP tool.
 
+## Related commands
+
+| Command | What it does |
+|---|---|
+| `/mcp` | Manage MCP server connections and OAuth. Replaces the `claude mcp list` reference above. |
+| `/permissions` | MCP tools obey the same permission rules as built-ins; this is where you allow/deny `mcp__filesystem__*`. |
+
+See [the full command reference](https://code.claude.com/docs/en/commands) for everything else.
+
 ## Reference
 
 - [MCP overview](https://modelcontextprotocol.io)
