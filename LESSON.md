@@ -75,6 +75,15 @@ Add a Publisher REST endpoint following the same pattern as Book.
 
 Claude should choose to invoke `/new-rest-endpoint` on its own. If it doesn't — if it instead writes the files manually from scratch — your `description` isn't doing its job. Make the description more precise about what triggers it.
 
+## Related commands
+
+| Command | What it does |
+|---|---|
+| `/skills` | List available skills; press `t` to sort by token cost. Confirms your `new-rest-endpoint` skill is discovered. |
+| `/plugin` | Manage plugins, the distribution channel for skills beyond `.claude/skills/`. |
+
+See [the full command reference](https://code.claude.com/docs/en/commands) for everything else.
+
 ## Reference
 
 - [Skills documentation](https://docs.claude.com/claude-code/skills)
