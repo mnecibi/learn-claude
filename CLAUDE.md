@@ -1,6 +1,8 @@
-# learn-claude — project notes for Claude Code
+# learn-ai-coding — project notes for your AI assistant
 
-A small Spring Boot service used as a teaching vehicle for the learn-claude course. Treat this file as the source of truth for how to work in this repo.
+A small Spring Boot service used as a teaching vehicle for the AI-Assisted Coding for Java Developers course. Treat this file as the source of truth for how to work in this repo.
+
+This file is read by Claude Code at session start. Codex CLI uses an `AGENTS.md` mirror of this content — keep the two in sync if you're working with both tools.
 
 ## Stack
 
@@ -28,7 +30,7 @@ com.learnclaude.library.<feature>/
     <Feature>Controller.java  — REST endpoints
 ```
 
-The current feature is `book`. New features (e.g. `author`) follow the same shape.
+Current features: `book`, `author`.
 
 ## Conventions
 
