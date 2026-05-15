@@ -1,0 +1,32 @@
+# Codex CLI project config — hooks for the learn-ai-coding course (lesson 3).
+#
+# Codex requires you to TRUST this project before its hooks fire. The first
+# time you start Codex in this repo, run `/hooks` and approve the project
+# hooks. Otherwise nothing here runs.
+#
+# These hooks mirror the Claude Code hooks at .claude/settings.json. Both tools
+# share the PreToolUse/PostToolUse/Stop event model and the same exit-code
+# convention (exit 0 = continue, exit 2 = block with stderr as the reason).
+
+# --- PreToolUse: guard against pom.xml edits -------------------------------
+[[hooks.PreToolUse]]
+matcher = "Edit|Write|MultiEdit"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "jq -r '.tool_input.file_path // \"\"' | grep -q 'pom\\.xml$' && { echo 'pom.xml edits require human review — please confirm with the user before changing Maven config.' >&2; exit 2; } || exit 0"
+
+# --- PostToolUse: auto-compile after a .java edit --------------------------
+[[hooks.PostToolUse]]
+matcher = "Edit|Write|MultiEdit"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "jq -r '.tool_input.file_path // \"\"' | grep -qE '\\.java$' && mvn -q compile 2>&1 | tail -20 || exit 0"
+
+# --- Stop: run the full test suite when the assistant wraps up -------------
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = "mvn -q test 2>&1 | grep -E 'Tests run|BUILD' | tail -3"
