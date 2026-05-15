@@ -2,7 +2,7 @@
 
 A small Spring Boot service used as a teaching vehicle for the AI-Assisted Coding for Java Developers course. Treat this file as the source of truth for how to work in this repo.
 
-This file is read by Claude Code at session start. A mirror copy of the same content lives at `AGENTS.md` for Codex CLI. Keep the two files in sync.
+This file is read by Codex CLI at session start. A mirror copy of the same content lives at `CLAUDE.md` for Claude Code. Keep the two files in sync.
 
 ## Stack
 
