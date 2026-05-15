@@ -2,19 +2,32 @@
 
 ## What you'll learn
 
-- What a Claude Code skill is and when to write one
-- How to package a multi-step recipe so you can invoke it as `/skill-name`
+- What a skill is and when to write one
+- How to package a multi-step recipe so you can invoke it with a short command
 - How to make skills auto-trigger from natural-language prompts (no slash needed)
 
 ## Java analogy
 
-A skill is like a `@Service` bean — write it once, inject it (invoke it) wherever you need it. Without skills, you re-explain the same recipe to Claude every time ("scaffold a controller, then a service, then a JPA repo, then a test"). With a skill, you say `/new-rest-endpoint Author` and the recipe runs.
+A skill is like a `@Service` bean — write it once, invoke it wherever you need it. Without skills, you re-explain the same recipe to your assistant every time ("scaffold a controller, then a service, then a JPA repo, then a test"). With a skill, you trigger it by name and the recipe runs.
 
 If you've ever written a shell script to wrap a 5-step copy-paste workflow, you understand the value: the work is one-shot, but you do it twice a week.
 
 ## The concept
 
-A skill is just a folder under `.claude/skills/<name>/` containing a `SKILL.md`. The frontmatter looks like:
+A skill is a folder containing a `SKILL.md` file. The frontmatter holds `name` and `description`; the body is the recipe (numbered steps the assistant follows).
+
+### Where the file lives
+
+| Tool | Path | Invocation |
+|---|---|---|
+| **Claude Code** | `.claude/skills/<name>/SKILL.md` | `/<name>` in-session, or auto-triggered by the `description` |
+| **Codex** | `.agents/skills/<name>/SKILL.md` (note: under `.agents/`, **not** `.codex/`) | `$<name>` in-session, or `/skills` to browse, or auto-triggered by the `description` |
+
+Both tools also support a personal scope (`~/.claude/skills/` and `~/.agents/skills/`) — handy for "my own" skills that travel across projects.
+
+> **Codex note:** the older `/prompts:<name>` mechanism (loaded from `~/.codex/prompts/*.md`) is **deprecated**. Use Skills for new work.
+
+### Tiny example
 
 ```markdown
 ---
@@ -34,38 +47,39 @@ Given a feature name like `Author`:
 6. Run `mvn -q test` to confirm.
 ```
 
+The body is **identical** between Claude Code and Codex — only the path differs. If you use both tools, ship the same `SKILL.md` at both paths.
+
 **Two ways to invoke:**
 
-1. **Explicit slash**: type `/new-rest-endpoint Author` — Claude runs the recipe.
-2. **Auto-trigger**: type "add a new author endpoint" — Claude reads the skill's `description` field and decides to use it. The `description` is the most important line in the file: it's what Claude pattern-matches against your natural-language request.
+1. **Explicit:** type `/new-rest-endpoint Author` (Claude) or `$new-rest-endpoint Author` (Codex). Your assistant runs the recipe.
+2. **Auto-trigger:** type "add a new author endpoint" — your assistant reads the skill's `description` field and decides to use it. The `description` is the most important line in the file: it's what the assistant pattern-matches against your natural-language request.
 
-Skills can scope to a project (`.claude/skills/`) or a user (`~/.claude/skills/`). Project-scoped skills travel with the repo — the whole team gets them.
+### Why not just put this in the project-memory file?
 
-### Why not just put this in `CLAUDE.md`?
-
-Because `CLAUDE.md` is loaded **every** turn (token cost). A skill is loaded **only when invoked**. Use `CLAUDE.md` for always-on conventions; use skills for occasional multi-step recipes.
+Because the project-memory file is loaded **every** turn (token cost). A skill is loaded **only when invoked**. Use the memory file for always-on conventions; use skills for occasional multi-step recipes.
 
 ## Your turn (TODO)
 
 Author the `new-rest-endpoint` skill so you can scaffold a feature in one command.
 
-- [ ] Create `.claude/skills/new-rest-endpoint/SKILL.md` with frontmatter (`name`, `description`).
-- [ ] Write a `description` that makes Claude auto-trigger the skill when the user says things like "add a new endpoint for X" or "scaffold a foo controller". One sentence. Be specific about what the skill does.
+- [ ] Create the skill file at `.claude/skills/new-rest-endpoint/SKILL.md` (Claude) or `.agents/skills/new-rest-endpoint/SKILL.md` (Codex) — or both, with identical content.
+- [ ] Frontmatter: `name`, `description`. Write a `description` that makes your assistant auto-trigger the skill when the user says things like "add a new endpoint for X" or "scaffold a foo controller". One sentence. Be specific about what the skill does.
 - [ ] In the body, list the exact files to create — referencing the `book` package as the template to copy. Include filenames, package declarations, and a note to mirror `BookControllerTest` for the test file.
 - [ ] Add a final step: run `mvn -q test` and report failures.
-- [ ] (Optional) Add a `/list-rest-endpoints` skill that greps for `@RestController` and lists all REST surface in the project.
+- [ ] (Optional) Add a `list-rest-endpoints` skill that greps for `@RestController` and lists all REST surface in the project.
 
 ## How to verify
 
-Two checks:
+Two checks (run them in a fresh session — `claude` or `codex` — in this directory).
 
-**Explicit invocation.** In a fresh `claude` session in this directory:
+**Explicit invocation.**
 
 ```
-/new-rest-endpoint Author
+/new-rest-endpoint Author        # Claude
+$new-rest-endpoint Author        # Codex
 ```
 
-Claude should create all 5 files in the right packages, with code that compiles. Run `mvn -q test` and confirm the new `AuthorControllerTest` passes.
+The assistant should create all 5 files in the right packages, with code that compiles. Run `mvn -q test` and confirm the new `AuthorControllerTest` passes.
 
 **Auto-trigger.** Discard the changes (`git checkout .`) and try natural language:
 
@@ -73,21 +87,22 @@ Claude should create all 5 files in the right packages, with code that compiles.
 Add a Publisher REST endpoint following the same pattern as Book.
 ```
 
-Claude should choose to invoke `/new-rest-endpoint` on its own. If it doesn't — if it instead writes the files manually from scratch — your `description` isn't doing its job. Make the description more precise about what triggers it.
+The assistant should choose to invoke the skill on its own. If it doesn't — if it instead writes the files manually from scratch — your `description` isn't doing its job. Make the description more precise about what triggers it.
 
 ## Related commands
 
-| Command | What it does |
-|---|---|
-| `/skills` | List available skills; press `t` to sort by token cost. Confirms your `new-rest-endpoint` skill is discovered. |
-| `/plugin` | Manage plugins, the distribution channel for skills beyond `.claude/skills/`. |
+| Claude Code | Codex | What it does |
+|---|---|---|
+| `/skills` | `/skills` | List available skills. Confirms your `new-rest-endpoint` skill is discovered. |
+| `/plugin` | `/skill-installer` | Manage installable skill packages from outside the repo. |
 
-See [the full command reference](https://code.claude.com/docs/en/commands) for everything else.
+See the full command reference for [Claude Code](https://docs.claude.com/claude-code) or [Codex](https://developers.openai.com/codex/cli).
 
 ## Reference
 
-- [Skills documentation](https://docs.claude.com/claude-code/skills)
-- Compare your skill to the solution branch:
+- Claude Code skills: <https://docs.claude.com/claude-code/skills>
+- Codex skills: <https://developers.openai.com/codex/skills>
+- Compare your skill(s) to the solution branch:
   ```bash
-  git diff lesson-02-skills..lesson-02-skills-solution -- .claude/
+  git diff lesson-02-skills..lesson-02-skills-solution -- .claude/ .agents/
   ```
